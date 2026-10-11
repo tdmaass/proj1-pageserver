@@ -127,7 +127,7 @@ def respond(sock):
             
             log.info("Found request: {}".format(request))
             transmit(STATUS_OK, sock)
-            transmit("\nThis request can be found YAY", sock)
+            transmit(contents, sock)
             return
         
         log.info("Found request: {}".format(request))
