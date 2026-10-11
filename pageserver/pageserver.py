@@ -21,7 +21,8 @@ log = logging.getLogger(__name__)
 # Logging level may be overridden by configuration 
 
 import socket    # Basic TCP/IP communication on the internet
-import _thread   # Response computation runs concurrently with main program
+import _thread   # Response computation runs concurrently with main programk
+import os
 
 
 def listen(portnum):
@@ -83,24 +84,59 @@ def respond(sock):
     This server responds only to GET requests (not PUT, POST, or UPDATE).
     Any valid GET request is answered with an ascii graphic of a cat.
     """
-    sent = 0
-    request = sock.recv(1024)  # We accept only short requests
-    request = str(request, encoding='utf-8', errors='strict')
-    log.info("--- Received request ----")
-    log.info("Request was {}\n***\n".format(request))
+    try:
+        sent = 0
+        request = sock.recv(1024)  # We accept only short requests
+        request = str(request, encoding='utf-8', errors='strict')
+        log.info("--- Received request ----")
+        log.info("Request was {}\n***\n".format(request))
 
-    parts = request.split()
-    if len(parts) > 1 and parts[0] == "GET":
+        parts = request.split()
+        path = parts[1]
+        root = os.path.realpath(DOCROOT)
+        filepath = os.path.realpath(os.path.join(root, path.lstrip("/")))
+        sameDir = os.path.commonpath([root, filepath]) == root
+
+        if len(parts) < 2 and parts[0] != "GET":
+            log.info("Unhandled request: {}".format(request))
+            transmit(STATUS_NOT_IMPLEMENTED, sock)
+            transmit("\nI don't handle this request: {}\n".format(request), sock)
+            return
+        
+        elif (not path.startswith("/") or ("//" in path) or ("~" in path) or (".." in path)):
+            log.info("Forbidden request: {}".format(request))
+            transmit(STATUS_FORBIDDEN, sock)
+            transmit("\nThis request is forbidden", sock)
+            return
+        
+        elif not sameDir:
+            log.info("Forbidden request: {}".format(request))
+            transmit(STATUS_FORBIDDEN, sock)
+            transmit("\nThis request is forbidden", sock)
+            return
+        
+        elif not os.path.isfile(filepath):
+            log.info("Not Found request: {}".format(request))
+            transmit(STATUS_NOT_FOUND, sock)
+            transmit("\nThis request cannot be found", sock)
+            return
+        
+        elif ((path.endswith(".html")) or (path.endswith(".css"))):
+            with open(filepath, "r") as file:
+                contents = file.read()
+            
+            log.info("Found request: {}".format(request))
+            transmit(STATUS_OK, sock)
+            transmit("\nThis request can be found YAY", sock)
+            return
+        
+        log.info("Found request: {}".format(request))
         transmit(STATUS_OK, sock)
         transmit(CAT, sock)
-    else:
-        log.info("Unhandled request: {}".format(request))
-        transmit(STATUS_NOT_IMPLEMENTED, sock)
-        transmit("\nI don't handle this request: {}\n".format(request), sock)
 
-    sock.shutdown(socket.SHUT_RDWR)
-    sock.close()
-    return
+    finally:
+        sock.shutdown(socket.SHUT_RDWR)
+        sock.close()
 
 
 def transmit(msg, sock):
@@ -136,10 +172,15 @@ def get_options():
 
 
 def main():
+    global DOCROOT
     options = get_options()
-    port = options.PORT
+    assert options.DOCROOT, "Document root must be specified in " \
+          + "configuration file credentials.ini or on command line"
+    DOCROOT = options.DOCROOT
     if options.DEBUG:
         log.setLevel(logging.DEBUG)
+
+    port = options.PORT
     sock = listen(port)
     log.info("Listening on port {}".format(port))
     log.info("Socket is {}".format(sock))
