@@ -73,7 +73,7 @@ CAT = """
 # See:  https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 # or    http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
 ##
-STATUS_OK = "HTTP/1.0 200 OK\n\n"
+STATUS_OK = "HTTP/1.0 200 OK\n"
 STATUS_FORBIDDEN = "HTTP/1.0 403 Forbidden\n\n"
 STATUS_NOT_FOUND = "HTTP/1.0 404 Not Found\n\n"
 STATUS_NOT_IMPLEMENTED = "HTTP/1.0 401 Not Implemented\n\n"
@@ -92,48 +92,57 @@ def respond(sock):
         log.info("Request was {}\n***\n".format(request))
 
         parts = request.split()
-        path = parts[1]
         root = os.path.realpath(DOCROOT)
-        filepath = os.path.realpath(os.path.join(root, path.lstrip("/")))
-        sameDir = os.path.commonpath([root, filepath]) == root
-
-        if len(parts) < 2 and parts[0] != "GET":
+        
+        if len(parts) < 2 or parts[0] != "GET":
             log.info("Unhandled request: {}".format(request))
             transmit(STATUS_NOT_IMPLEMENTED, sock)
-            transmit("\nI don't handle this request: {}\n".format(request), sock)
+            transmit("\nError 401 \nI don't handle this request: {}\n".format(request), sock)
             return
-        
-        elif (not path.startswith("/") or ("//" in path) or ("~" in path) or (".." in path)):
+
+        path = parts[1]
+        filepath = os.path.realpath(os.path.join(root, path.lstrip("/")))
+        sameDir = os.path.commonpath([root, filepath]) == root
+    
+
+        if (not path.startswith("/") or ("//" in path) or ("~" in path) or (".." in path)):
             log.info("Forbidden request: {}".format(request))
             transmit(STATUS_FORBIDDEN, sock)
-            transmit("\nThis request is forbidden", sock)
+            transmit("\nError 403 \nThis request is forbidden", sock)
             return
         
         elif not sameDir:
             log.info("Forbidden request: {}".format(request))
             transmit(STATUS_FORBIDDEN, sock)
-            transmit("\nThis request is forbidden", sock)
+            transmit("\nError 403 \nThis request is forbidden", sock)
+            return
+
+        elif not ((path.endswith(".html")) or (path.endswith(".css"))):
+            log.info("Not Found request: {}".format(request))
+            transmit(STATUS_NOT_FOUND, sock)
+            transmit("\nError 404 \nThis request can not be found", sock)
             return
         
         elif not os.path.isfile(filepath):
             log.info("Not Found request: {}".format(request))
             transmit(STATUS_NOT_FOUND, sock)
-            transmit("\nThis request cannot be found", sock)
+            transmit("\nError 404 \nThis request cannot be found", sock)
             return
         
-        elif ((path.endswith(".html")) or (path.endswith(".css"))):
-            with open(filepath, "r") as file:
-                contents = file.read()
-            
-            log.info("Found request: {}".format(request))
-            transmit(STATUS_OK, sock)
-            transmit(contents, sock)
-            return
         
-        log.info("Found request: {}".format(request))
-        transmit(STATUS_OK, sock)
-        transmit(CAT, sock)
+        with open(filepath, "r", encoding="utf-8") as file:
+            contents = file.read()
 
+        if path.endswith(".html"):
+            content_type = "text/html"
+        else:
+            content_type = "text/css"
+
+        transmit(STATUS_OK, sock)
+        transmit("Content-Type: {}; charset=utf-8\r\n\r\n".format(content_type), sock)
+        transmit(contents, sock)
+        return
+        
     finally:
         sock.shutdown(socket.SHUT_RDWR)
         sock.close()
